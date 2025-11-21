@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>CÔNG CỤ TẠO ĐƠN KHỞI KIỆN HÀNG LOẠT</title>
+    <script src="https://unpkg.com/xlsx/dist/xlsx.full.min.js"></script>
     <style>
         * {
             margin: 0;
@@ -52,12 +53,15 @@
             background: #f8f9fa;
             padding: 20px;
             border-right: 1px solid #ddd;
+            overflow-y: auto;
+            max-height: 800px;
         }
         
         .preview-panel {
             flex: 1;
             padding: 20px;
             background: white;
+            overflow-y: auto;
         }
         
         .section {
@@ -199,6 +203,13 @@
             margin: 20px 0;
             border-radius: 5px;
             background: #f8f9fa;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+        
+        .upload-area:hover {
+            background: #e8f4fc;
+            border-color: #2980b9;
         }
         
         .upload-area i {
@@ -260,6 +271,58 @@
             text-align: right;
             margin-top: 100px;
             font-style: italic;
+        }
+        
+        .customer-item {
+            background: #fff;
+            border: 1px solid #ddd;
+            margin: 10px 0;
+            padding: 15px;
+            border-radius: 5px;
+        }
+        
+        .customer-header {
+            background: #34495e;
+            color: white;
+            padding: 10px;
+            margin: -15px -15px 10px -15px;
+            border-radius: 3px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .remove-customer {
+            background: #e74c3c;
+            color: white;
+            border: none;
+            padding: 5px 10px;
+            border-radius: 3px;
+            cursor: pointer;
+        }
+        
+        .file-info {
+            background: #d4edda;
+            padding: 10px;
+            border-radius: 5px;
+            margin: 10px 0;
+            border-left: 4px solid #28a745;
+        }
+        
+        .progress-bar {
+            width: 100%;
+            height: 20px;
+            background: #f0f0f0;
+            border-radius: 10px;
+            margin: 10px 0;
+            overflow: hidden;
+        }
+        
+        .progress {
+            height: 100%;
+            background: #27ae60;
+            width: 0%;
+            transition: width 0.3s;
         }
         
         @media (max-width: 768px) {
@@ -383,15 +446,25 @@ Xét thấy bên vay không còn khả năng thanh toán nợ, do đó VPBank đ
                     
                     <!-- Tab 2: Upload file -->
                     <div id="tab2" class="tab-content">
-                        <div class="upload-area">
+                        <div class="upload-area" id="uploadArea" onclick="document.getElementById('fileUpload').click()">
                             <div>📁</div>
-                            <h3>UPLOAD FILE EXCEL/DOCX</h3>
+                            <h3>UPLOAD FILE EXCEL</h3>
                             <p>Kéo thả file vào đây hoặc click để chọn file</p>
-                            <input type="file" id="fileUpload" accept=".xlsx,.xls,.docx,.txt" style="display: none;">
-                            <button class="btn btn-primary" onclick="document.getElementById('fileUpload').click()">CHỌN FILE</button>
+                            <input type="file" id="fileUpload" accept=".xlsx,.xls,.csv" style="display: none;" onchange="handleFileUpload(this.files[0])">
                             <p style="margin-top: 15px; font-size: 12px; color: #666;">
-                                Hỗ trợ: Excel (.xlsx, .xls), Word (.docx), Text (.txt)
+                                Hỗ trợ: Excel (.xlsx, .xls), CSV (.csv)
                             </p>
+                        </div>
+                        
+                        <div id="fileInfo" class="file-info hidden">
+                            <strong>File đã chọn:</strong> <span id="fileName"></span>
+                            <br>
+                            <strong>Số dòng dữ liệu:</strong> <span id="rowCount"></span>
+                            <button class="btn btn-success" onclick="processUploadedData()" style="margin-top: 10px;">XỬ LÝ DỮ LIỆU</button>
+                        </div>
+
+                        <div class="progress-bar hidden" id="progressBar">
+                            <div class="progress" id="progress"></div>
                         </div>
                         
                         <div class="section">
@@ -417,12 +490,12 @@ Xét thấy bên vay không còn khả năng thanh toán nợ, do đó VPBank đ
                             
                             <div class="form-group">
                                 <label>Dán dữ liệu (copy từ Excel):</label>
-                                <textarea id="pasteData" placeholder="Dán dữ liệu từ Excel vào đây...&#10;Mỗi dòng là một khách hàng, các cột cách nhau bằng tab"></textarea>
+                                <textarea id="pasteData" placeholder="Dán dữ liệu từ Excel vào đây...&#10;Mỗi dòng là một khách hàng, các cột cách nhau bằng tab&#10;&#10;Ví dụ:&#10;Phan Nhật Linh	1996	079096006806	22/11/2021	Cục Cảnh sát về QLHC và TTXH	158/5A ấp Thới Tây 2, Xã Hóc Môn	0901350113&#10;Nguyễn Văn A	1985	012345678901	15/08/2020	Công an TP Hà Nội	123 Đường ABC, Quận 1, TP HCM	0912345678" style="height: 200px;"></textarea>
                             </div>
                             
                             <div class="form-group">
                                 <label>Hoặc nhập danh sách (mỗi dòng một khách hàng):</label>
-                                <textarea id="textData" placeholder="Nhập danh sách khách hàng...&#10;Mỗi dòng một khách hàng với định dạng:&#10;Họ tên | Năm sinh | CMND | Ngày cấp | Nơi cấp | Địa chỉ | Số ĐT"></textarea>
+                                <textarea id="textData" placeholder="Nhập danh sách khách hàng...&#10;Mỗi dòng một khách hàng với định dạng:&#10;Họ tên | Năm sinh | CMND | Ngày cấp | Nơi cấp | Địa chỉ | Số ĐT&#10;&#10;Ví dụ:&#10;Phan Nhật Linh | 1996 | 079096006806 | 22/11/2021 | Cục Cảnh sát về QLHC và TTXH | 158/5A ấp Thới Tây 2, Xã Hóc Môn | 0901350113" style="height: 200px;"></textarea>
                             </div>
                             
                             <button class="btn btn-success" onclick="processPastedData()">XỬ LÝ DỮ LIỆU</button>
@@ -464,6 +537,7 @@ Xét thấy bên vay không còn khả năng thanh toán nợ, do đó VPBank đ
         let customerCount = 1;
         let contractCount = 0;
         let customers = [];
+        let uploadedData = [];
         
         // Khởi tạo khi trang load
         document.addEventListener('DOMContentLoaded', function() {
@@ -580,43 +654,46 @@ Xét thấy bên vay không còn khả năng thanh toán nợ, do đó VPBank đ
             addCustomer(); // Khách hàng đầu tiên
         }
         
-        function addCustomer() {
+        function addCustomer(customerData = null) {
             customerCount++;
             const customerId = customerCount;
             
             const customerDiv = document.createElement('div');
-            customerDiv.className = 'contract-section';
+            customerDiv.className = 'customer-item';
             customerDiv.id = `customer${customerId}`;
             
             customerDiv.innerHTML = `
-                <h4 style="color: #2c3e50; margin-bottom: 15px;">KHÁCH HÀNG ${customerId}</h4>
+                <div class="customer-header">
+                    <span>KHÁCH HÀNG ${customerId}</span>
+                    <button class="remove-customer" onclick="removeSpecificCustomer(${customerId})">Xóa</button>
+                </div>
                 <div class="form-group">
                     <label>Họ tên:</label>
-                    <input type="text" id="customerName${customerId}" value="${customerId === 1 ? 'Phan Nhật Linh' : ''}">
+                    <input type="text" id="customerName${customerId}" value="${customerData ? customerData.name : (customerId === 1 ? 'Phan Nhật Linh' : '')}">
                 </div>
                 <div class="form-group">
                     <label>Năm sinh:</label>
-                    <input type="text" id="customerYear${customerId}" value="${customerId === 1 ? '1996' : ''}">
+                    <input type="text" id="customerYear${customerId}" value="${customerData ? customerData.year : (customerId === 1 ? '1996' : '')}">
                 </div>
                 <div class="form-group">
                     <label>CMND/CCCD:</label>
-                    <input type="text" id="customerId${customerId}" value="${customerId === 1 ? '079096006806' : ''}">
+                    <input type="text" id="customerId${customerId}" value="${customerData ? customerData.idNumber : (customerId === 1 ? '079096006806' : '')}">
                 </div>
                 <div class="form-group">
                     <label>Ngày cấp:</label>
-                    <input type="text" id="customerIdDate${customerId}" value="${customerId === 1 ? '22/11/2021' : ''}">
+                    <input type="text" id="customerIdDate${customerId}" value="${customerData ? customerData.idDate : (customerId === 1 ? '22/11/2021' : '')}">
                 </div>
                 <div class="form-group">
                     <label>Nơi cấp:</label>
-                    <input type="text" id="customerIdPlace${customerId}" value="${customerId === 1 ? 'Cục Cảnh sát về QLHC và TTXH' : ''}">
+                    <input type="text" id="customerIdPlace${customerId}" value="${customerData ? customerData.idPlace : (customerId === 1 ? 'Cục Cảnh sát về QLHC và TTXH' : '')}">
                 </div>
                 <div class="form-group">
                     <label>Địa chỉ:</label>
-                    <input type="text" id="customerAddress${customerId}" value="${customerId === 1 ? '158/5A ấp Thới Tây 2, Xã Hóc Môn (Xã Tân Hiệp, Huyện Hóc Môn cũ), Thành phố Hồ Chí Minh' : ''}">
+                    <input type="text" id="customerAddress${customerId}" value="${customerData ? customerData.address : (customerId === 1 ? '158/5A ấp Thới Tây 2, Xã Hóc Môn (Xã Tân Hiệp, Huyện Hóc Môn cũ), Thành phố Hồ Chí Minh' : '')}">
                 </div>
                 <div class="form-group">
                     <label>Số điện thoại:</label>
-                    <input type="text" id="customerPhone${customerId}" value="${customerId === 1 ? '0901350113' : ''}">
+                    <input type="text" id="customerPhone${customerId}" value="${customerData ? customerData.phone : (customerId === 1 ? '0901350113' : '')}">
                 </div>
             `;
             
@@ -633,8 +710,115 @@ Xét thấy bên vay không còn khả năng thanh toán nợ, do đó VPBank đ
             }
         }
         
+        function removeSpecificCustomer(customerId) {
+            if (customerCount > 1) {
+                const customerDiv = document.getElementById(`customer${customerId}`);
+                customerDiv.remove();
+                // Cập nhật lại ID cho các khách hàng còn lại
+                for (let i = customerId + 1; i <= customerCount; i++) {
+                    const currentCustomer = document.getElementById(`customer${i}`);
+                    if (currentCustomer) {
+                        currentCustomer.id = `customer${i-1}`;
+                        currentCustomer.querySelector('.customer-header span').textContent = `KHÁCH HÀNG ${i-1}`;
+                        currentCustomer.querySelector('.remove-customer').setAttribute('onclick', `removeSpecificCustomer(${i-1})`);
+                        
+                        // Cập nhật ID cho các input
+                        const inputs = currentCustomer.querySelectorAll('input');
+                        inputs[0].id = `customerName${i-1}`;
+                        inputs[1].id = `customerYear${i-1}`;
+                        inputs[2].id = `customerId${i-1}`;
+                        inputs[3].id = `customerIdDate${i-1}`;
+                        inputs[4].id = `customerIdPlace${i-1}`;
+                        inputs[5].id = `customerAddress${i-1}`;
+                        inputs[6].id = `customerPhone${i-1}`;
+                    }
+                }
+                customerCount--;
+                updateCustomerCount();
+            }
+        }
+        
         function updateCustomerCount() {
             document.getElementById('customerCount').textContent = `Số lượng khách hàng: ${customerCount}`;
+        }
+        
+        // Xử lý upload file
+        function handleFileUpload(file) {
+            if (!file) return;
+            
+            document.getElementById('fileName').textContent = file.name;
+            document.getElementById('fileInfo').classList.remove('hidden');
+            document.getElementById('progressBar').classList.remove('hidden');
+            
+            const reader = new FileReader();
+            
+            reader.onload = function(e) {
+                try {
+                    const data = new Uint8Array(e.target.result);
+                    const workbook = XLSX.read(data, { type: 'array' });
+                    const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
+                    const jsonData = XLSX.utils.sheet_to_json(firstSheet, { header: 1 });
+                    
+                    uploadedData = jsonData.filter(row => row.length >= 6 && row[0]); // Lọc dòng có dữ liệu
+                    
+                    document.getElementById('rowCount').textContent = uploadedData.length - 1; // Trừ dòng tiêu đề
+                    document.getElementById('progress').style.width = '100%';
+                    
+                    setTimeout(() => {
+                        document.getElementById('progressBar').classList.add('hidden');
+                    }, 1000);
+                    
+                } catch (error) {
+                    alert('Lỗi khi đọc file: ' + error.message);
+                    document.getElementById('fileInfo').classList.add('hidden');
+                    document.getElementById('progressBar').classList.add('hidden');
+                }
+            };
+            
+            reader.onerror = function() {
+                alert('Lỗi khi đọc file');
+                document.getElementById('fileInfo').classList.add('hidden');
+                document.getElementById('progressBar').classList.add('hidden');
+            };
+            
+            reader.readAsArrayBuffer(file);
+        }
+        
+        function processUploadedData() {
+            if (uploadedData.length === 0) {
+                alert('Không có dữ liệu để xử lý');
+                return;
+            }
+            
+            // Xóa khách hàng cũ (giữ lại khách hàng đầu tiên)
+            while (customerCount > 1) {
+                removeCustomer();
+            }
+            
+            let processedCount = 0;
+            
+            // Xử lý từng dòng dữ liệu (bỏ qua dòng tiêu đề)
+            uploadedData.forEach((row, index) => {
+                if (index === 0) return; // Bỏ qua dòng tiêu đề
+                
+                if (row.length >= 7) {
+                    const customerData = {
+                        name: row[0] || '',
+                        year: row[1] || '',
+                        idNumber: row[2] || '',
+                        idDate: row[3] || '',
+                        idPlace: row[4] || '',
+                        address: row[5] || '',
+                        phone: row[6] || ''
+                    };
+                    
+                    addCustomer(customerData);
+                    processedCount++;
+                }
+            });
+            
+            alert(`Đã thêm ${processedCount} khách hàng từ file`);
+            switchTab(1);
         }
         
         // Xử lý dữ liệu dán
@@ -650,53 +834,74 @@ Xét thấy bên vay không còn khả năng thanh toán nợ, do đó VPBank đ
             const dataToProcess = pasteData || textData;
             const lines = dataToProcess.split('\n').filter(line => line.trim());
             
+            if (lines.length === 0) {
+                alert('Không có dữ liệu hợp lệ');
+                return;
+            }
+            
             // Xóa khách hàng cũ (giữ lại khách hàng đầu tiên)
             while (customerCount > 1) {
                 removeCustomer();
             }
             
+            let processedCount = 0;
+            
             // Thêm khách hàng mới từ dữ liệu dán
             lines.forEach((line, index) => {
-                if (index === 0) continue; // Bỏ qua dòng tiêu đề nếu có
+                if (!line.trim()) return;
                 
-                const columns = line.split('\t').length > 1 ? line.split('\t') : line.split('|');
+                // Xác định delimiter (tab hoặc |)
+                const hasTab = line.includes('\t');
+                const hasPipe = line.includes('|');
+                const delimiter = hasTab ? '\t' : (hasPipe ? '|' : null);
+                
+                if (!delimiter) {
+                    console.log('Dòng không có delimiter phù hợp:', line);
+                    return;
+                }
+                
+                const columns = line.split(delimiter).map(col => col.trim());
                 
                 if (columns.length >= 7) {
-                    addCustomer();
+                    const customerData = {
+                        name: columns[0] || '',
+                        year: columns[1] || '',
+                        idNumber: columns[2] || '',
+                        idDate: columns[3] || '',
+                        idPlace: columns[4] || '',
+                        address: columns[5] || '',
+                        phone: columns[6] || ''
+                    };
                     
-                    document.getElementById(`customerName${customerCount}`).value = columns[0]?.trim() || '';
-                    document.getElementById(`customerYear${customerCount}`).value = columns[1]?.trim() || '';
-                    document.getElementById(`customerId${customerCount}`).value = columns[2]?.trim() || '';
-                    document.getElementById(`customerIdDate${customerCount}`).value = columns[3]?.trim() || '';
-                    document.getElementById(`customerIdPlace${customerCount}`).value = columns[4]?.trim() || '';
-                    document.getElementById(`customerAddress${customerCount}`).value = columns[5]?.trim() || '';
-                    document.getElementById(`customerPhone${customerCount}`).value = columns[6]?.trim() || '';
+                    addCustomer(customerData);
+                    processedCount++;
                 }
             });
             
-            alert(`Đã thêm ${lines.length} khách hàng từ dữ liệu`);
+            alert(`Đã thêm ${processedCount} khách hàng từ dữ liệu`);
             switchTab(1);
         }
         
         // Tải file mẫu
         function downloadTemplate() {
-            const templateContent = `Họ tên\tNăm sinh\tCMND/CCCD\tNgày cấp\tNơi cấp\tĐịa chỉ\tSố điện thoại
-Phan Nhật Linh\t1996\t079096006806\t22/11/2021\tCục Cảnh sát về QLHC và TTXH\t158/5A ấp Thới Tây 2, Xã Hóc Môn (Xã Tân Hiệp, Huyện Hóc Môn cũ), Thành phố Hồ Chí Minh\t0901350113
-Nguyễn Văn A\t1985\t012345678901\t15/08/2020\tCông an TP Hà Nội\t123 Đường ABC, Quận 1, TP Hồ Chí Minh\t0912345678`;
+            const templateData = [
+                ['Họ tên', 'Năm sinh', 'CMND/CCCD', 'Ngày cấp', 'Nơi cấp', 'Địa chỉ', 'Số điện thoại'],
+                ['Phan Nhật Linh', '1996', '079096006806', '22/11/2021', 'Cục Cảnh sát về QLHC và TTXH', '158/5A ấp Thới Tây 2, Xã Hóc Môn (Xã Tân Hiệp, Huyện Hóc Môn cũ), Thành phố Hồ Chí Minh', '0901350113'],
+                ['Nguyễn Văn A', '1985', '012345678901', '15/08/2020', 'Công an TP Hà Nội', '123 Đường ABC, Quận 1, TP Hồ Chí Minh', '0912345678']
+            ];
             
-            const blob = new Blob([templateContent], { type: 'text/plain' });
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = 'Mau_danh_sach_khach_hang.txt';
-            document.body.appendChild(a);
-            a.click();
-            document.body.removeChild(a);
-            URL.revokeObjectURL(url);
+            const ws = XLSX.utils.aoa_to_sheet(templateData);
+            const wb = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(wb, ws, 'KhachHang');
+            XLSX.writeFile(wb, 'Mau_danh_sach_khach_hang.xlsx');
         }
         
         // Tạo đơn
         function previewDocument() {
+            if (customerCount === 0) {
+                alert('Vui lòng thêm ít nhất một khách hàng');
+                return;
+            }
             generateDocument(1); // Xem trước khách hàng đầu tiên
         }
         
@@ -888,17 +1093,73 @@ Dư nợ thực tế tạm tính đến ngày ${debtDate} theo hợp đồng cho
         
         // Tải về
         function downloadAllDocuments() {
-            alert('Tính năng tải về tất cả đơn dưới dạng ZIP đang được phát triển');
-            // Trong thực tế, bạn có thể sử dụng thư viện JSZip để tạo file zip
+            if (customerCount === 0) {
+                alert('Không có khách hàng nào để tải về');
+                return;
+            }
+            
+            // Tạo từng file đơn
+            for (let i = 1; i <= customerCount; i++) {
+                const customerName = document.getElementById(`customerName${i}`).value;
+                generateDocument(i);
+                
+                // Tạo blob và tải về
+                const content = document.getElementById('documentPreview').innerHTML;
+                const blob = new Blob([`
+                    <!DOCTYPE html>
+                    <html>
+                    <head>
+                        <meta charset="UTF-8">
+                        <style>
+                            body { 
+                                font-family: "Times New Roman", serif; 
+                                line-height: 1.6;
+                                padding: 40px;
+                            }
+                            .preview-table {
+                                width: 100%;
+                                border-collapse: collapse;
+                                margin: 15px 0;
+                            }
+                            .preview-table td {
+                                border: 1px solid #000;
+                                padding: 8px 12px;
+                            }
+                        </style>
+                    </head>
+                    <body>
+                        ${content}
+                    </body>
+                    </html>
+                `], { type: 'text/html' });
+                
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `Don_khoi_kien_${customerName.replace(/\s+/g, '_')}.doc`;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+            }
+            
+            alert(`Đã tải về ${customerCount} file đơn khởi kiện`);
         }
         
         function downloadSummary() {
             let summary = 'BÁO CÁO TỔNG HỢP ĐƠN KHỞI KIỆN\n\n';
+            summary += `Ngày tạo: ${new Date().toLocaleDateString('vi-VN')}\n`;
+            summary += `Tổng số khách hàng: ${customerCount}\n\n`;
             
             for (let i = 1; i <= customerCount; i++) {
-                summary += `Khách hàng ${i}: ${document.getElementById(`customerName${i}`).value}\n`;
-                summary += `CMND: ${document.getElementById(`customerId${i}`).value}\n`;
-                summary += `Địa chỉ: ${document.getElementById(`customerAddress${i}`).value}\n\n`;
+                summary += `--- KHÁCH HÀNG ${i} ---\n`;
+                summary += `Họ tên: ${document.getElementById(`customerName${i}`).value}\n`;
+                summary += `Năm sinh: ${document.getElementById(`customerYear${i}`).value}\n`;
+                summary += `CMND/CCCD: ${document.getElementById(`customerId${i}`).value}\n`;
+                summary += `Ngày cấp: ${document.getElementById(`customerIdDate${i}`).value}\n`;
+                summary += `Nơi cấp: ${document.getElementById(`customerIdPlace${i}`).value}\n`;
+                summary += `Địa chỉ: ${document.getElementById(`customerAddress${i}`).value}\n`;
+                summary += `Số điện thoại: ${document.getElementById(`customerPhone${i}`).value}\n\n`;
             }
             
             const blob = new Blob([summary], { type: 'text/plain' });
@@ -913,7 +1174,40 @@ Dư nợ thực tế tạm tính đến ngày ${debtDate} theo hợp đồng cho
         }
         
         function printDocument() {
-            window.print();
+            const previewContent = document.getElementById('documentPreview').innerHTML;
+            const printWindow = window.open('', '_blank');
+            printWindow.document.write(`
+                <!DOCTYPE html>
+                <html>
+                <head>
+                    <title>In Đơn Khởi Kiện</title>
+                    <style>
+                        body { 
+                            font-family: "Times New Roman", serif; 
+                            line-height: 1.6;
+                            padding: 40px;
+                        }
+                        .preview-table {
+                            width: 100%;
+                            border-collapse: collapse;
+                            margin: 15px 0;
+                        }
+                        .preview-table td {
+                            border: 1px solid #000;
+                            padding: 8px 12px;
+                        }
+                        @media print {
+                            body { padding: 20px; }
+                        }
+                    </style>
+                </head>
+                <body>
+                    ${previewContent}
+                </body>
+                </html>
+            `);
+            printWindow.document.close();
+            printWindow.print();
         }
         
         function resetForm() {
@@ -923,12 +1217,29 @@ Dư nợ thực tế tạm tính đến ngày ${debtDate} theo hợp đồng cho
         }
         
         function setupEventListeners() {
-            // Xử lý upload file
-            document.getElementById('fileUpload').addEventListener('change', function(e) {
-                const file = e.target.files[0];
-                if (file) {
-                    alert(`Đã chọn file: ${file.name}\nTính năng xử lý file tự động đang được phát triển`);
-                    // Trong thực tế, bạn có thể sử dụng SheetJS để đọc file Excel
+            // Kéo thả file
+            const uploadArea = document.getElementById('uploadArea');
+            
+            uploadArea.addEventListener('dragover', function(e) {
+                e.preventDefault();
+                uploadArea.style.background = '#e8f4fc';
+                uploadArea.style.borderColor = '#2980b9';
+            });
+            
+            uploadArea.addEventListener('dragleave', function(e) {
+                e.preventDefault();
+                uploadArea.style.background = '#f8f9fa';
+                uploadArea.style.borderColor = '#3498db';
+            });
+            
+            uploadArea.addEventListener('drop', function(e) {
+                e.preventDefault();
+                uploadArea.style.background = '#f8f9fa';
+                uploadArea.style.borderColor = '#3498db';
+                
+                const files = e.dataTransfer.files;
+                if (files.length > 0) {
+                    handleFileUpload(files[0]);
                 }
             });
         }
